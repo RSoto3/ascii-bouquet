@@ -1,0 +1,10 @@
+{
+  "name": "ascii-bouquet",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./public" },
+  "routes": [
+    { "pattern": "gr.sotodev.cl", "custom_domain": true }
+  ],
+  // only the custom domain; no *.workers.dev URL
+  "workers_dev": false
+}
