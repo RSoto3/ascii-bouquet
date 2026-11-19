@@ -877,20 +877,35 @@ document.getElementById('edges').onclick = e => { edges = 1 - edges; e.target.cl
 document.getElementById('spin').onclick = e => { spin = !spin; e.target.classList.toggle('on', spin); };
 // mouse wheel / trackpad
 canvas.addEventListener('wheel', e => { e.preventDefault(); setZoom(zoom * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
-// one finger/mouse rotates; two fingers pinch to zoom
+// One finger/mouse rotates. Two fingers: pinch zooms and sliding them up/down moves the
+// camera vertically (pan) without rotating. Desktop pan: Shift+drag or right-button drag.
 const touches = new Map();
-let pinch = null; // { d0, z0 }
+let pinch = null;   // { d0, z0, my0, p0 }
+let pan = null;     // desktop pan: { y0, p0 }
+let panY = 0, lastDist = 6; // lastDist: camera distance from the last frame (world units)
+const PAN_MAX = 1.6;
+const setPan = v => { panY = Math.max(-PAN_MAX, Math.min(PAN_MAX, v)); };
+// world units per CSS pixel at the bouquet's depth, so content tracks the fingers
+const worldPerPx = () => 2 * lastDist * Math.tan(17 * Math.PI / 180) / innerHeight;
 const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+const pinchMidY = () => { const [a, b] = [...touches.values()]; return (a.y + b.y) / 2; };
+canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerdown', e => {
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
-  if (touches.size === 2) { pinch = { d0: pinchDist(), z0: zoom }; drag = null; }
+  if (touches.size === 2) { pinch = { d0: pinchDist(), z0: zoom, my0: pinchMidY(), p0: panY }; drag = pan = null; }
+  else if (touches.size === 1 && (e.button === 2 || e.shiftKey)) pan = { y0: e.clientY, p0: panY };
   else if (touches.size === 1) drag = { x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener('pointermove', e => {
   if (!touches.has(e.pointerId)) return;
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (pinch && touches.size >= 2) { setZoom(pinch.z0 * pinchDist() / Math.max(1, pinch.d0)); return; }
+  if (pinch && touches.size >= 2) {
+    setZoom(pinch.z0 * pinchDist() / Math.max(1, pinch.d0));
+    setPan(pinch.p0 + (pinchMidY() - pinch.my0) * worldPerPx());
+    return;
+  }
+  if (pan) { setPan(pan.p0 + (e.clientY - pan.y0) * worldPerPx()); return; }
   if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
   yaw += dx * 0.008; vyaw = dx * 0.008; pitch = Math.max(-0.6, Math.min(0.9, pitch + dy * 0.006)); });
@@ -898,7 +913,7 @@ const endPointer = e => {
   touches.delete(e.pointerId);
   if (touches.size < 2) pinch = null;
   // lifting any finger stops rotating, so the finger left after a pinch doesn't jerk the view
-  drag = null;
+  drag = null; pan = null;
 };
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
@@ -942,8 +957,10 @@ function frame(now) {
 
   const model = M4.mul(M4.tr(0, CENTER[1], 0), M4.mul(M4.rx(pitch), M4.mul(M4.ry(yaw), M4.tr(0, -CENTER[1], 0))));
   const aspect = W / H, dist = Math.max(5.9, 4.2 / aspect) * mix(0.75, 1, e) / zoom; // portrait: fit the bouquet's width
-  const eye = [0, mix(-1.0, 0.4, e), dist];
-  const vp = M4.mul(M4.persp(34 * Math.PI / 180, aspect, 0.1, 30), M4.look(eye, [0, mix(-1.4, -0.3, e), 0], [0, 1, 0]));
+  lastDist = dist;
+  // panY moves eye and target together: the camera slides vertically without rotating
+  const eye = [0, mix(-1.0, 0.4, e) + panY, dist];
+  const vp = M4.mul(M4.persp(34 * Math.PI / 180, aspect, 0.1, 30), M4.look(eye, [0, mix(-1.4, -0.3, e) + panY, 0], [0, 1, 0]));
 
   const mainVao = bday ? cakeVao : vao, mainCount = bday ? CCOUNT : COUNT;
   const mainSway = bday ? 3 : 0, mainGround = bday ? flameBase : GROUND; // flames flicker
