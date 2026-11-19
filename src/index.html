@@ -18,7 +18,8 @@ window.APP_CONFIG = /*CONFIG_START*/{
   "msgAnniversaryFirst": "feliz aniversario 💐",
   "msgAnniversary": "feliz {n} años 💐",
   "msgBirthday": "¡felices {age}, {name}! 🎂",
-  "enableTest": false
+  "enableTest": false,
+  "seed": "ascii-bouquet"
 }/*CONFIG_END*/;
 // "YYYY-MM-DD" -> local-time Date at 00:00
 window.parseYMD = s => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0); };
@@ -89,7 +90,9 @@ const gl = canvas.getContext('webgl2', { antialias: false });
 if (!gl) { document.getElementById('err').style.display = 'grid'; return; }
 
 /* ---------- utilidades ---------- */
-let seed = 7;
+// Every random layout (bouquet, field, cake) derives from the SEED text in .env
+const seedOf = s => { let h = 0x811c9dc5; for (const c of String(s)) { h ^= c.codePointAt(0); h = Math.imul(h, 0x01000193); } return h | 0; };
+let seed = seedOf(APP_CONFIG.seed + ':bouquet');
 const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
   t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 const add = (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
@@ -490,7 +493,7 @@ const emptyVao = gl.createVertexArray();
 // Separate geometry with its own clock: it grows outward from the bouquet when it appears.
 const GROUND = -1.92;
 G = { pos: [], nrm: [], col: [], ao: [], idx: [], cl: [], ce: [], tm: [] };
-seed = 4242;
+seed = seedOf(APP_CONFIG.seed + ':field');
 const fog = (x, z) => 1 - smooth(2.2, 6.5, Math.hypot(x, z));
 const reveal = (x, z) => Math.hypot(x, z) * 0.28;
 const GX = 8, GZ0 = -8, GZ1 = 3.5;
@@ -561,7 +564,7 @@ let fieldStart = null;
 
 /* ---------- pastel de cumpleaños 3D (día del cumpleaños): reemplaza al ramo ---------- */
 G = { pos: [], nrm: [], col: [], ao: [], idx: [], cl: [], ce: [], tm: [] };
-seed = 9001;
+seed = seedOf(APP_CONFIG.seed + ':cake');
 const AGE = new Date().getFullYear() - parseYMD(APP_CONFIG.birthdayDate).getFullYear();
 function cyl(r, y0, y1, col) {
   grid(64, 6, (u, v) => { const th = u * 6.2832;

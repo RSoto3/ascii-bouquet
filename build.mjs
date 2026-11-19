@@ -39,6 +39,8 @@ const config = {
   msgBirthday: env.MSG_BIRTHDAY || '¡felices {age}, {name}! 🎂',
   // --prod (used by npm run deploy) always disables the ?test= previews
   enableTest: env.ENABLE_TEST === 'true' && !process.argv.includes('--prod'),
+  // any text; every random layout (bouquet, field, cake) is derived from it
+  seed: env.SEED || 'ascii-bouquet',
 };
 if (config.enableTest) console.warn('ENABLE_TEST=true: ?test= previews are ON (set it to false before deploying)');
 
