@@ -93,7 +93,7 @@ window.parseYMD = s => { const [y, m, d] = String(s).split('-').map(Number); ret
 <div id="err">Tu navegador no soporta WebGL2, que esta animación necesita.</div>
 <div class="ui">
   <label>Zoom <input id="zoom" type="range" min="0.6" max="1.6" step="0.05" value="1"></label>
-  <label>Detalle <input id="cell" type="range" min="4" max="14" step="1" value="5"></label>
+  <label>Detalle <input id="cell" type="range" min="2" max="14" step="1" value="5"></label>
   <button id="edges" class="on">Bordes</button>
   <button id="spin" class="on">Rotar</button>
   <button id="replay">Volver a florecer</button>
@@ -862,7 +862,10 @@ const CENTER = [0, -0.5, 0];
 const lightVP = M4.mul(M4.ortho(-1.75, 1.75, -1.75, 1.75, 0.5, 9), M4.look(add(CENTER, mulS(LIGHT, 4.5)), CENTER, [0, 1, 0]));
 
 /* ---------- estado e interfaz ---------- */
-let mode = 0, cellCss = 5, edges = 1, spin = true;
+// phones start with smaller characters (more columns) than desktop
+const MOBILE = Math.min(innerWidth, innerHeight) < 700;
+let mode = 0, cellCss = MOBILE ? 3 : 5, edges = 1, spin = true;
+document.getElementById('cell').value = cellCss;
 let yaw = 0.4, pitch = 0.12, vyaw = 0, drag = null;
 document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
   mode = +b.dataset.mode; document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b)); });
@@ -919,17 +922,22 @@ canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 
 let W = 0, H = 0, sceneRT = null, cellRT = null, cw = 7, ch = 12;
+// Phones are 3x: capping at 2x made the characters blurry and oversized
+const DPR_MAX = 3;
 function sizeCells() {
-  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const dpr = Math.min(devicePixelRatio || 1, DPR_MAX);
   cw = cellCss * dpr; ch = cw * 1.75;
   freeTarget(cellRT);
   cellRT = makeTarget(Math.max(1, Math.ceil(W / cw)), Math.max(1, Math.ceil(H / ch)), gl.NEAREST);
+  // The 3D scene only needs ~4x4 samples per character cell, so render it at that size
+  // instead of full screen resolution (much lighter at 3x with small cells).
+  freeTarget(sceneRT);
+  sceneRT = makeTarget(Math.min(W, cellRT.w * 4), Math.min(H, cellRT.h * 4), gl.LINEAR);
 }
 function resize() {
-  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const dpr = Math.min(devicePixelRatio || 1, DPR_MAX);
   W = Math.floor(innerWidth * dpr); H = Math.floor(innerHeight * dpr);
   canvas.width = W; canvas.height = H;
-  freeTarget(sceneRT); sceneRT = makeTarget(W, H, gl.LINEAR);
   sizeCells();
 }
 addEventListener('resize', resize); resize();
@@ -956,7 +964,7 @@ function frame(now) {
   }
 
   const model = M4.mul(M4.tr(0, CENTER[1], 0), M4.mul(M4.rx(pitch), M4.mul(M4.ry(yaw), M4.tr(0, -CENTER[1], 0))));
-  const aspect = W / H, dist = Math.max(5.9, 4.2 / aspect) * mix(0.75, 1, e) / zoom; // portrait: fit the bouquet's width
+  const aspect = W / H, dist = Math.max(5.9, 4.8 / aspect) * mix(0.75, 1, e) / zoom; // portrait: fit the whole bouquet width (11 lilies + greenery)
   lastDist = dist;
   // panY moves eye and target together: the camera slides vertically without rotating
   const eye = [0, mix(-1.0, 0.4, e) + panY, dist];
@@ -991,7 +999,7 @@ function frame(now) {
     gl.bindVertexArray(mainVao);
   }
   // 2) escena iluminada
-  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneRT.fb); gl.viewport(0, 0, W, H);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneRT.fb); gl.viewport(0, 0, sceneRT.w, sceneRT.h);
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.useProgram(meshP.p);
   gl.uniformMatrix4fv(meshP.u.uModel, false, model); gl.uniformMatrix4fv(meshP.u.uVP, false, vp);
