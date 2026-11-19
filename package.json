@@ -1,9 +1,9 @@
 {
-  "name": "ramo-lirios",
+  "name": "ascii-flowers",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "deploy": "node build.mjs --prod && npx wrangler deploy --assets ./public --name ramo-lirios --compatibility-date 2026-11-01"
+    "deploy": "node build.mjs --prod && npx wrangler deploy --assets ./public --name ascii-flowers --compatibility-date 2026-11-01"
   }
 }
