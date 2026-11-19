@@ -68,6 +68,21 @@ window.parseYMD = s => { const [y, m, d] = String(s).split('-').map(Number); ret
   @keyframes latido { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
   #juntos .t { font-variant-numeric: tabular-nums; white-space: nowrap; }
   @media (max-width: 760px) { #juntos { bottom: auto; top: 14px; } }
+  /* phones: controls hide behind a small gear button so they don't cover the bouquet */
+  #uiToggle { display: none; }
+  @media (max-width: 760px) {
+    #uiToggle {
+      display: grid; place-items: center; position: fixed; right: 16px; bottom: 16px; z-index: 3;
+      width: 44px; height: 44px; border-radius: 50%; font-size: 20px; line-height: 1; cursor: pointer;
+      color: #ddd; background: rgba(12,12,14,.78); border: 1px solid #2a2a30; backdrop-filter: blur(6px);
+    }
+    .ui {
+      display: none; left: auto; right: 16px; bottom: 70px; transform: none;
+      flex-direction: column; align-items: stretch; max-width: calc(100vw - 32px);
+    }
+    .ui.open { display: flex; }
+    .ui label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  }
   #err { position: fixed; inset: 0; display: none; place-items: center; color: #ccc;
          font: 14px ui-monospace, monospace; text-align: center; padding: 20px; }
 </style>
@@ -77,11 +92,20 @@ window.parseYMD = s => { const [y, m, d] = String(s).split('-').map(Number); ret
 <canvas id="fx"></canvas>
 <div id="err">Tu navegador no soporta WebGL2, que esta animación necesita.</div>
 <div class="ui">
+  <label>Zoom <input id="zoom" type="range" min="0.6" max="1.6" step="0.05" value="1"></label>
   <label>Detalle <input id="cell" type="range" min="4" max="14" step="1" value="5"></label>
   <button id="edges" class="on">Bordes</button>
   <button id="spin" class="on">Rotar</button>
   <button id="replay">Volver a florecer</button>
 </div>
+<button id="uiToggle" aria-label="Opciones" aria-expanded="false">⚙</button>
+<script>
+document.getElementById('uiToggle').addEventListener('click', e => {
+  const open = document.querySelector('.ui').classList.toggle('open');
+  e.currentTarget.setAttribute('aria-expanded', open);
+  e.currentTarget.textContent = open ? '✕' : '⚙';
+});
+</script>
 <script>
 (() => {
 'use strict';
@@ -158,15 +182,19 @@ const bez = (a, b, c, t) => add(add(mulS(a, (1-t)*(1-t)), mulS(b, 2*(1-t)*t)), m
 // Lirio: 6 tépalos lanceolados (3 internos anchos + 3 externos), puntas que se curvan hacia atrás,
 // manchas, estambres con anteras y pistilo
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
-function lily(T, dir, s, P, twist, t0) {
+function lily(T, dir, s, P, twist, t0, pl = 1) { // pl: petal length factor for this flower
   const F = frameY(dir, twist);
   const nu = 12, nv = 26;
   for (let k = 0; k < 6; k++) {
     const inner = k % 2 === 0;
-    const phi = k * Math.PI / 3 + twist * 0.3;
-    const L = inner ? 1.0 : 0.94, Wd = inner ? 0.21 : 0.16;
-    const a0 = inner ? 0.30 : 0.38, curl = inner ? 1.85 : 2.1;
+    // natural variation: no two petals are identical
+    const phi = k * Math.PI / 3 + twist * 0.3 + (rnd() - 0.5) * 0.16;
+    const L = (inner ? 1.0 : 0.94) * pl * (1 + (rnd() - 0.5) * 0.18);
+    const Wd = (inner ? 0.21 : 0.16) * (1 + (rnd() - 0.5) * 0.14) / Math.sqrt(pl); // longer petals are slimmer
+    const a0 = (inner ? 0.30 : 0.38) + (rnd() - 0.5) * 0.16, curl = (inner ? 1.85 : 2.1) * (1 + (rnd() - 0.5) * 0.3);
     const r0 = inner ? 0.025 : 0.035, y0 = inner ? 0.0 : -0.015;
+    const ptw = (rnd() - 0.5) * 0.7;   // twist along the petal
+    const lat = (rnd() - 0.5) * 0.14;  // sideways sweep of the tip
     const spine = (a0, curl, L) => { const ang = [], sp = [[0, 0]];
       for (let j = 0; j <= nv; j++) ang.push(a0 + curl * Math.pow(j / nv, 2.3));
       for (let j = 1; j <= nv; j++) { const a = ang[j-1], ds = L / nv;
@@ -182,7 +210,10 @@ function lily(T, dir, s, P, twist, t0) {
       // canal central + borde ondulado + cóncavo
       let off = -1.6 * x * x / (Wd * 4) - 0.022 * Math.exp(-xr * xr * 18) * smooth(0.05, 0.3, v) * (1 - v);
       off += 0.018 * Math.sin(v * 30 + k) * Math.pow(Math.abs(xr), 3) * smooth(0.3, 0.6, v);
-      const lx = x, ly = sy - Math.sin(a) * off + y0, lz = sz + Math.cos(a) * off + r0;
+      // rotate the cross-section progressively (twist) and sweep the tip sideways
+      const ta = open ? ptw * v : 0, ct = Math.cos(ta), st = Math.sin(ta);
+      const x2 = x * ct - off * st, off2 = x * st + off * ct;
+      const lx = x2 + (open ? lat * v * v : 0), ly = sy - Math.sin(a) * off2 + y0, lz = sz + Math.cos(a) * off2 + r0;
       const px = lx * cph + lz * sph, pz = -lx * sph + lz * cph;
       return applyF(F, [px, ly, pz], T, s); };
       const xr = (u - 0.5) * 2;
@@ -217,12 +248,13 @@ function lily(T, dir, s, P, twist, t0) {
 // capullo cerrado con 3 aristas
 function bud(T, dir, Ln, col, t0) {
   const F = frameY(dir, rnd() * 6.28);
+  const bend = (rnd() - 0.5) * 0.6, fat = 0.85 + rnd() * 0.3; // buds curve and vary in girth
   anim({ s: t0, d: 1.1, c: T }, () => grid(14, 18, (u, v) => {
     const th = u * Math.PI * 2;
-    let r = 0.06 * Math.pow(Math.sin(Math.PI * Math.min(v, 0.995)), 0.6) * (0.75 + 0.5 * v);
+    let r = 0.06 * fat * Math.pow(Math.sin(Math.PI * Math.min(v, 0.995)), 0.6) * (0.75 + 0.5 * v);
     r *= 1 - 0.13 * Math.pow(Math.cos(1.5 * th), 2);
     const c = mix3([0.32, 0.55, 0.22], col, smooth(0.2, 0.85, v));
-    return { p: applyF(F, [Math.cos(th) * r, v * Ln, Math.sin(th) * r], T), c, ao: 0.6 + 0.4 * v };
+    return { p: applyF(F, [Math.cos(th) * r + bend * v * v * Ln, v * Ln, Math.sin(th) * r], T), c, ao: 0.6 + 0.4 * v };
   }));
 }
 function leaf(base, dir, upHint, Ln, Wd, col) {
@@ -263,54 +295,152 @@ const ORANGE = { edge: [1.0, 0.55, 0.08], center: [0.98, 0.38, 0.04], throat: [0
 const PINKL = { edge: [0.99, 0.84, 0.88], center: [0.95, 0.48, 0.64], throat: [0.8, 0.86, 0.5], spots: [0.62, 0.12, 0.3], band: 0.45,
                 filament: [0.7, 0.82, 0.5], anther: [0.55, 0.2, 0.08], stigma: [0.75, 0.4, 0.5] };
 const PIV = [0, -0.95, 0];
-const heads = [{ p: [0, 0.72, 0.08], s: 0.68, P: STAR }];
-const ringT = [WHITE, ORANGE, STAR, WHITE, PINKL, ORANGE];
-for (let i = 0; i < 6; i++) {
-  const a = i * Math.PI / 3 + 0.2;
-  heads.push({ p: [Math.cos(a) * 0.7, 0.32 + 0.06 * Math.sin(i * 2.1), Math.sin(a) * 0.7], s: 0.62, P: ringT[i] });
+// Organic dome: one taller lily near the center and an irregular ring around it
+// (uneven angles, radii, heights and sizes; heads kept apart so they don't intersect)
+// Free placement on the dome (no fixed angles): one tall lily off-center, a loose middle layer
+// and two lower ones half hidden in the greenery. Spacing scales with flower size.
+const PALETTE = [STAR, WHITE, ORANGE, STAR, WHITE, PINKL, ORANGE, PINKL, WHITE, STAR, PINKL];
+for (let i = PALETTE.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [PALETTE[i], PALETTE[j]] = [PALETTE[j], PALETTE[i]]; }
+const TIERS = [
+  { n: 1, rr: [0.0, 0.22], y: [0.62, 0.78], s: [0.62, 0.7] },   // tallest, near the middle
+  { n: 1, rr: [0.28, 0.46], y: [0.66, 0.86], s: [0.5, 0.6] },   // second high point, off to one side
+  { n: 6, rr: [0.42, 0.76], y: [0.26, 0.56], s: [0.5, 0.64] },  // middle layer
+  { n: 3, rr: [0.6, 0.74], y: [0.16, 0.26], s: [0.44, 0.54] },  // low, peeking out
+];
+const heads = [];
+let pi = 0;
+for (const tier of TIERS) for (let i = 0; i < tier.n; i++) {
+  let best = null, bestGap = -Infinity;
+  for (let tries = 0; tries < 80; tries++) {
+    const a = rnd() * Math.PI * 2, rr = mix(tier.rr[0], tier.rr[1], Math.sqrt(rnd()));
+    const p = [Math.cos(a) * rr, mix(tier.y[0], tier.y[1], rnd()), Math.sin(a) * rr];
+    const s = mix(tier.s[0], tier.s[1], rnd());
+    // gap to the closest existing head, relative to both sizes
+    const gap = heads.reduce((g, h) => Math.min(g, len(sub(h.p, p)) - 0.48 * (h.s + s)), Infinity);
+    if (gap > bestGap) { best = { p, s }; bestGap = gap; }
+    if (gap > 0.04) break;
+  }
+  // about a third of the higher lilies get longer, slimmer petals (low ones stay compact to clear the paper)
+  const pl = best.p[1] > 0.35 && rnd() < 0.35 ? 1.18 + rnd() * 0.17 : 0.92 + rnd() * 0.12;
+  heads.push({ ...best, pl, P: PALETTE[pi++ % PALETTE.length] });
 }
 const TIE = [0, -1.05, 0];
 const GROW = 2.2;
+const SPIRAL = 0.8; // florists' spiral: stems cross at the tie and fan out rotated below it
+const bez3 = (a, b, c, d, t) => { const m = 1 - t;
+  return add(add(mulS(a, m * m * m), mulS(b, 3 * m * m * t)), add(mulS(c, 3 * m * t * t), mulS(d, t * t * t))); };
 function stemTo(p, d, t0) {
-  const b0 = sub(p, mulS(d, 0.02)), b1 = sub(p, mulS(d, 0.5));
-  const bot = [p[0] * 0.12, -2.08, p[2] * 0.12], path = [];
-  for (let i = 0; i <= 10; i++) path.push(bez(b0, b1, TIE, i / 10));
-  for (let i = 1; i <= 6; i++) path.push(bez(TIE, mix3(TIE, bot, 0.5), bot, i / 6));
-  anim({ s: t0, d: 0.08, along: (u, v) => (1 - v) * GROW }, () => tube(path, 0.024, 0.028, [0.2, 0.38, 0.13]));
+  const ang = Math.atan2(p[2], p[0]);
+  // stems bundle around the tie (not a single point) and bow gently on the way up
+  const tie = [Math.cos(ang) * 0.045, TIE[1] + (rnd() - 0.5) * 0.04, Math.sin(ang) * 0.045];
+  const side = norm(cross(d, [0, 1, 0.001]));
+  const c1 = add(sub(p, mulS(d, 0.42)), mulS(side, (rnd() - 0.5) * 0.18));
+  const c2 = add(tie, [Math.cos(ang) * 0.12 + (rnd() - 0.5) * 0.08, 0.35, Math.sin(ang) * 0.12 + (rnd() - 0.5) * 0.08]);
+  // below the tie the stems stay tight inside the paper cone and only fan out
+  // (rotated, florist's spiral) after leaving its tip
+  const ba = ang + SPIRAL, br = 0.12 + rnd() * 0.08;
+  const bot = [Math.cos(ba) * br, -2.2 + rnd() * 0.06, Math.sin(ba) * br];
+  const c3 = [Math.cos(ang + SPIRAL * 0.4) * 0.04, -1.5, Math.sin(ang + SPIRAL * 0.4) * 0.04];
+  const c4 = [Math.cos(ba) * 0.03, -1.9, Math.sin(ba) * 0.03];
+  const path = [];
+  for (let i = 0; i <= 10; i++) path.push(bez3(sub(p, mulS(d, 0.02)), c1, c2, tie, i / 10));
+  for (let i = 1; i <= 6; i++) path.push(bez3(tie, c3, c4, bot, i / 6));
+  const r = 0.021 + rnd() * 0.006;
+  anim({ s: t0, d: 0.08, along: (u, v) => (1 - v) * GROW }, () => tube(path, r * 0.85, r * 1.15, mulS([0.2, 0.38, 0.13], 0.9 + rnd() * 0.2)));
   return path;
 }
-heads.forEach((h, hi) => {
-  const d = norm(sub(h.p, PIV)); h.d = d;
-  const st = 0.1 + hi * 0.11;
-  lily(h.p, d, h.s, h.P, rnd() * 6.28, st + GROW - 0.1);
-  const path = stemTo(h.p, d, st);
-  // hojas angostas a lo largo del tallo
-  for (const k of [3, 5]) {
-    const q = path[k], tg = norm(sub(path[k - 1], path[k + 1]));
-    const out = norm([q[0] + 0.001, 0, q[2] + 0.001]);
-    anim({ s: st + (1 - k / 16) * GROW - 0.05, d: 0.9, c: q }, () =>
-      leaf(q, norm(add(mulS(out, 0.9), mulS(tg, 0.5))), [0, 1, 0], 0.32 + rnd() * 0.08, 0.045, [0.17, 0.4, 0.14]));
+// Inner (silk) paper wall radius at angle th and height y; Infinity above the paper rim
+function paperRadiusAt(th, y) {
+  const top = 0.08 + 0.16 * Math.sin(3 * th + 1) + 0.07 * Math.sin(8 * th);
+  if (y >= top) return Infinity;
+  const v = Math.max(0, (y + 1.86) / (top + 1.86)), p = paperPoint(th, v, 1);
+  return Math.hypot(p[0], p[2]);
+}
+// true if a leaf from base along dir with length Ln stays inside the paper (sampled along it)
+function leafFits(base, dir, Ln, margin = 0.07) {
+  for (let i = 1; i <= 6; i++) {
+    const t = i / 6, q = add(base, mulS(dir, Ln * t));
+    q[1] -= 0.35 * Ln * t * t; // leaves droop toward the tip (see leaf())
+    if (Math.hypot(q[0], q[2]) > paperRadiusAt(Math.atan2(q[2], q[0]), q[1]) - margin) return false;
   }
+  return true;
+}
+heads.forEach((h, hi) => {
+  // lilies face outward and nod a little instead of all pointing away from one pivot
+  const out = norm([h.p[0] + 0.001, 0, h.p[2] + 0.001]);
+  const d = norm(add(add(norm(sub(h.p, PIV)), mulS(out, hi ? 0.35 + rnd() * 0.3 : 0.1)),
+                     [(rnd() - 0.5) * 0.3, -0.05 - rnd() * 0.15, (rnd() - 0.5) * 0.3]));
+  h.d = d;
+  const st = 0.1 + hi * 0.11;
+  lily(h.p, d, h.s, h.P, rnd() * 6.28, st + GROW - 0.1, h.pl);
+  const path = stemTo(h.p, d, st);
+  // narrow leaves along the stem, alternating sides at irregular heights
+  const ks = rnd() < 0.5 ? [3, 6] : [2, 4, 7];
+  ks.forEach((k, ki) => {
+    const q = path[k], tg = norm(sub(path[k - 1], path[k + 1]));
+    const o = norm([q[0] + 0.001, 0, q[2] + 0.001]), sd = norm(cross(o, [0, 1, 0]));
+    const dirL = norm(add(add(mulS(o, 0.8), mulS(sd, (ki % 2 ? 1 : -1) * (0.3 + rnd() * 0.4))), mulS(tg, 0.4 + rnd() * 0.3)));
+    // shorten the leaf until it no longer pokes through the paper; drop it if it can't fit
+    let Ln = 0.26 + rnd() * 0.16;
+    const wd = 0.038 + rnd() * 0.014, col = mulS([0.17, 0.4, 0.14], 0.85 + rnd() * 0.3);
+    while (Ln > 0.12 && !leafFits(q, dirL, Ln)) Ln *= 0.85;
+    if (Ln <= 0.12) return;
+    anim({ s: st + (1 - k / 16) * GROW - 0.05, d: 0.9, c: q }, () => leaf(q, dirL, [0, 1, 0], Ln, wd, col));
+  });
 });
-// capullos
+// capullos: irregular positions, lengths and curvature
 const budC = [[0.96, 0.82, 0.88], [0.94, 0.94, 0.86], [1.0, 0.62, 0.3], [0.96, 0.82, 0.88]];
 for (let i = 0; i < 4; i++) {
-  const a = i * Math.PI / 2 + 0.75;
-  const p = [Math.cos(a) * 0.4, 0.5 + 0.08 * (i % 2), Math.sin(a) * 0.4];
-  const d = norm(add(norm(sub(p, PIV)), [0, 0.6, 0]));
+  // free placement, kept away from the lily heads
+  let p, tries = 0;
+  do {
+    const a = rnd() * Math.PI * 2, rr = 0.25 + rnd() * 0.3;
+    p = [Math.cos(a) * rr, 0.42 + rnd() * 0.26, Math.sin(a) * rr];
+  } while (++tries < 60 && heads.some(h => len(sub(h.p, p)) < 0.3 + 0.35 * h.s));
+  const d = norm(add(norm(sub(p, PIV)), [(rnd() - 0.5) * 0.3, 0.4 + rnd() * 0.4, (rnd() - 0.5) * 0.3]));
   const st = 0.45 + i * 0.12;
-  bud(p, d, 0.36, budC[i], st + GROW - 0.1);
+  bud(p, d, 0.3 + rnd() * 0.12, budC[i], st + GROW - 0.1);
   stemTo(p, d, st);
 }
 // follaje alrededor del borde
 for (let i = 0; i < 14; i++) {
-  const a = i * Math.PI / 7 + 0.1 + (rnd() - 0.5) * 0.25;
-  const base = [Math.cos(a) * 0.66, -0.06 + rnd() * 0.08, Math.sin(a) * 0.66];
-  const dir = [Math.cos(a), 0.1 + rnd() * 0.4, Math.sin(a)];
+  const a = i * Math.PI / 7 + 0.1 + (rnd() - 0.5) * 0.4;
+  const rr = 0.66 + rnd() * 0.12;
+  // start at the paper rim height (highest of both layers here) so the leaf goes over it, not through it
+  const rim = Math.max(0.08 + 0.16 * Math.sin(3 * a + 1) + 0.07 * Math.sin(8 * a),
+                       -0.04 + 0.12 * Math.sin(3 * a + 2.2) + 0.05 * Math.sin(7 * a));
+  const base = [Math.cos(a) * rr, rim - 0.03 + rnd() * 0.05, Math.sin(a) * rr];
+  const dir = [Math.cos(a) + (rnd() - 0.5) * 0.25, 0.4 + rnd() * 0.45, Math.sin(a) + (rnd() - 0.5) * 0.25];
   anim({ s: 2.0 + i * 0.1, d: 1.2, c: base }, () =>
     leaf(base, dir, [0, 1, 0], 0.48 + rnd() * 0.14, 0.1, i % 2 ? [0.12, 0.32, 0.12] : [0.18, 0.4, 0.15]));
 }
-// paniculata
+// foliage cushion: a bumpy green mound that closes the mouth of the paper,
+// so you never look down into bare stems between the flowers
+anim({ s: 2.2, d: 1.0, c: [0, 0, 0] }, () => grid(64, 12, (u, v) => {
+  const th = u * Math.PI * 2, r = 0.88 * v;
+  const bump = 0.035 * Math.sin(th * 7 + v * 9) * Math.sin(v * 13 + th * 3) + 0.02 * Math.sin(th * 17 + v * 21);
+  const y = -0.02 + 0.2 * (1 - v * v) + bump;
+  const n = hash(Math.round(u * 64), Math.round(v * 12));
+  return { p: [Math.cos(th) * r, y, Math.sin(th) * r], c: mix3([0.08, 0.22, 0.07], [0.16, 0.36, 0.12], n), ao: 0.5 + 0.3 * n };
+}));
+// filler leaves rising between the lilies (like eucalyptus / greenery in a real bouquet)
+for (let i = 0; i < 22; i++) {
+  let base, tries = 0;
+  do {
+    const a = rnd() * Math.PI * 2, rr = 0.15 + rnd() * 0.65;
+    base = [Math.cos(a) * rr, 0.08 + rnd() * 0.12, Math.sin(a) * rr];
+  } while (++tries < 40 && heads.some(h => len(sub(h.p, base)) < 0.22));
+  const out = norm([base[0] + 0.001, 0, base[2] + 0.001]);
+  const dir = norm(add(mulS(out, 0.35 + rnd() * 0.5), [(rnd() - 0.5) * 0.5, 0.8 + rnd() * 0.4, (rnd() - 0.5) * 0.5]));
+  const Ln = 0.28 + rnd() * 0.2, col = rnd() < 0.5 ? [0.14, 0.36, 0.13] : [0.2, 0.42, 0.18];
+  anim({ s: 2.4 + rnd() * 1.2, d: 1.0, c: base }, () => leaf(base, dir, [0, 1, 0], Ln, 0.05 + rnd() * 0.03, col));
+}
+// paniculata: an outer shell plus sprigs tucked into the gaps between the lilies
+const gyp = p => {
+  const n = 3 + Math.floor(rnd() * 4);
+  anim({ s: 4.8 + rnd() * 1.8, d: 0.6, c: p }, () => { for (let k = 0; k < n; k++)
+    sphere(add(p, [(rnd()-0.5)*0.07, (rnd()-0.5)*0.05, (rnd()-0.5)*0.07]), 0.013 + rnd() * 0.009, [0.97, 0.97, 0.94]); });
+};
 let tries = 0, placed = 0;
 while (placed < 120 && tries < 6000) {
   tries++;
@@ -318,13 +448,16 @@ while (placed < 120 && tries < 6000) {
   const r = 0.82 + rnd() * 0.12;
   const p = [r * Math.sin(ph) * Math.cos(th), -0.3 + r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th)];
   if (p[1] < -0.04) continue;
-  let ok = true;
-  for (const h of heads) if (len(sub(p, h.p)) < 0.38) { ok = false; break; }
-  if (!ok) continue;
-  placed++;
-  const n = 3 + Math.floor(rnd() * 4);
-  anim({ s: 4.8 + rnd() * 1.8, d: 0.6, c: p }, () => { for (let k = 0; k < n; k++)
-    sphere(add(p, [(rnd()-0.5)*0.07, (rnd()-0.5)*0.05, (rnd()-0.5)*0.07]), 0.013 + rnd() * 0.009, [0.97, 0.97, 0.94]); });
+  if (heads.some(h => len(sub(p, h.p)) < 0.38)) continue;
+  placed++; gyp(p);
+}
+tries = 0; placed = 0;
+while (placed < 90 && tries < 6000) {
+  tries++;
+  const a = rnd() * Math.PI * 2, rr = 0.1 + rnd() * 0.72;
+  const p = [Math.cos(a) * rr, 0.12 + rnd() * 0.5, Math.sin(a) * rr];
+  if (heads.some(h => len(sub(p, h.p)) < 0.12 + 0.42 * h.s)) continue;
+  placed++; gyp(p);
 }
 // papel de envoltura: capa exterior kraft y capa interior de seda
 function paperPoint(th, v, layer) {
@@ -734,13 +867,41 @@ let yaw = 0.4, pitch = 0.12, vyaw = 0, drag = null;
 document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
   mode = +b.dataset.mode; document.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b)); });
 document.getElementById('cell').oninput = e => { cellCss = +e.target.value; sizeCells(); };
+let zoom = 1; // >1 closer, <1 farther
+const zoomInput = document.getElementById('zoom');
+const ZMIN = +zoomInput.min, ZMAX = +zoomInput.max;
+// single source of truth: slider, mouse wheel and pinch all go through here
+function setZoom(z) { zoom = Math.max(ZMIN, Math.min(ZMAX, z)); zoomInput.value = zoom; }
+zoomInput.oninput = e => setZoom(+e.target.value);
 document.getElementById('edges').onclick = e => { edges = 1 - edges; e.target.classList.toggle('on', !!edges); };
 document.getElementById('spin').onclick = e => { spin = !spin; e.target.classList.toggle('on', spin); };
-canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
-canvas.addEventListener('pointermove', e => { if (!drag) return;
+// mouse wheel / trackpad
+canvas.addEventListener('wheel', e => { e.preventDefault(); setZoom(zoom * Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+// one finger/mouse rotates; two fingers pinch to zoom
+const touches = new Map();
+let pinch = null; // { d0, z0 }
+const pinchDist = () => { const [a, b] = [...touches.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+canvas.addEventListener('pointerdown', e => {
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  canvas.setPointerCapture(e.pointerId);
+  if (touches.size === 2) { pinch = { d0: pinchDist(), z0: zoom }; drag = null; }
+  else if (touches.size === 1) drag = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && touches.size >= 2) { setZoom(pinch.z0 * pinchDist() / Math.max(1, pinch.d0)); return; }
+  if (!drag) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
   yaw += dx * 0.008; vyaw = dx * 0.008; pitch = Math.max(-0.6, Math.min(0.9, pitch + dy * 0.006)); });
-canvas.addEventListener('pointerup', () => drag = null);
+const endPointer = e => {
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = null;
+  // lifting any finger stops rotating, so the finger left after a pinch doesn't jerk the view
+  drag = null;
+};
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
 
 let W = 0, H = 0, sceneRT = null, cellRT = null, cw = 7, ch = 12;
 function sizeCells() {
@@ -780,7 +941,7 @@ function frame(now) {
   }
 
   const model = M4.mul(M4.tr(0, CENTER[1], 0), M4.mul(M4.rx(pitch), M4.mul(M4.ry(yaw), M4.tr(0, -CENTER[1], 0))));
-  const aspect = W / H, dist = Math.max(5.9, 4.3 / aspect) * mix(0.75, 1, e);
+  const aspect = W / H, dist = Math.max(5.9, 4.2 / aspect) * mix(0.75, 1, e) / zoom; // portrait: fit the bouquet's width
   const eye = [0, mix(-1.0, 0.4, e), dist];
   const vp = M4.mul(M4.persp(34 * Math.PI / 180, aspect, 0.1, 30), M4.look(eye, [0, mix(-1.4, -0.3, e), 0], [0, 1, 0]));
 
